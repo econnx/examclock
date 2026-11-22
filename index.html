@@ -1,0 +1,93 @@
+<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<title>ExamClock</title><meta name=description content="Split your exam time by points and get a per-question countdown. Never run out of time on the last question again.">
+<meta property=og:title content="ExamClock"><meta property=og:description content="Type the exam's questions and points — get a minute-by-minute plan and a countdown that tells you when to move on.">
+<meta property=og:image content="https://econnx.github.io/examclock/preview.png"><meta name=twitter:card content=summary_large_image>
+<style>
+:root{--bg:#fbfaf6;--ink:#121212;--mut:#6b6b6b;--card:#fff;--line:#e4e0d6;--acc:#ff5a36;--ok:#1c8c5a;--warn:#d98300}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1012;--ink:#efece6;--mut:#9c9a95;--card:#191a1d;--line:#2c2d31;--acc:#ff7a5c;--ok:#5fd39a;--warn:#ffb648}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,'Segoe UI',Roboto,sans-serif}
+main{max-width:760px;margin:auto;padding:40px 16px 64px}
+h1{font-size:44px;letter-spacing:-1.5px;margin:0}h1 span{color:var(--acc)}.sub{color:var(--mut);margin:4px 0 24px;font-size:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:16px}
+label{font-size:14px;color:var(--mut)}input{font:inherit;color:inherit;background:transparent;border:1px solid var(--line);border-radius:8px;padding:7px 9px;width:100%}
+.row{display:grid;grid-template-columns:1fr 90px 36px;gap:8px;margin-bottom:8px}.top{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid var(--line);background:var(--card);color:inherit;padding:8px 14px}
+.go{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:700;padding:12px 22px;font-size:18px}
+.x{padding:0;color:var(--mut)}.presets button{font-size:14px;margin:0 6px 6px 0}
+table{width:100%;border-collapse:collapse}td{padding:8px 6px;border-top:1px solid var(--line)}td.r{text-align:right;font-variant-numeric:tabular-nums}
+#run{display:none;text-align:center}#cur{font-size:22px;font-weight:700;margin-top:8px}#big{font-size:min(28vw,170px);font-weight:900;letter-spacing:-6px;line-height:1;font-variant-numeric:tabular-nums;margin:10px 0}
+#big.warn{color:var(--warn)}#big.over{color:var(--acc)}#next,#total{color:var(--mut)}
+.bar{display:flex;height:16px;border-radius:99px;overflow:hidden;margin:18px 0;background:var(--line)}.bar div{border-right:2px solid var(--bg);background:var(--mut);opacity:.35}.bar div.done{background:var(--ok);opacity:.9}.bar div.now{background:var(--acc);opacity:1}
+footer{margin-top:36px;color:var(--mut);font-size:14px}a{color:var(--acc)}
+</style>
+<main>
+<div id=setup>
+<h1>Exam<span>Clock</span></h1>
+<p class=sub>Type the exam's questions and their points. ExamClock splits the time fairly, keeps a buffer for checking, and runs a countdown that tells you when to move on.</p>
+<div class=card>
+ <div class=top><div><label>Exam length, minutes</label><input id=len type=number min=5 value=80></div>
+ <div><label>Keep for checking, minutes</label><input id=buf type=number min=0 value=8></div></div>
+ <label>Questions — name and points</label>
+ <div id=rows></div>
+ <button onclick="addRow('',1)">+ add question</button>
+ <div class=presets style="margin-top:14px"><label>Presets:</label><br>
+  <button onclick="preset('Theory 1:6,Theory 2:6,Problem:7,4 tests:4,Definition:2',80,8)">25-point final</button>
+  <button onclick="preset('Multiple choice:30,Short answers:30,Essay:40',90,10)">MCQ + essay</button>
+  <button onclick="preset('Reading:25,Listening:25,Writing:25,Speaking:25',120,0)">Language test</button>
+  <button onclick="preset('Q1:10,Q2:10,Q3:15,Q4:15,Q5:20,Q6:30',120,10)">6 problems</button></div>
+</div>
+<div class=card><table id=plan></table></div>
+<button class=go onclick=start()>Start the clock ▶</button> <button onclick=share()>Copy link to this plan</button>
+<footer>Runs in your browser, nothing is sent anywhere. Tip: cheap points first, then the expensive ones. · <a href="https://github.com/econnx/examclock">GitHub</a> · <a href="https://x.com/Econnx1">@Econnx1</a></footer>
+</div>
+<div id=run>
+ <div id=cur></div><div id=big>00:00</div><div id=next></div>
+ <div class=bar id=bar></div><div id=total></div><br>
+ <button class=go onclick=nextQ()>Done → next</button> <button onclick=pause() id=pb>Pause</button> <button onclick=stop()>End</button>
+</div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+function addRow(n, p) { const d = document.createElement("div"); d.className = "row";
+  d.innerHTML = `<input placeholder="Question" value="${String(n).replace(/"/g, "&quot;")}"><input type=number min=0 step=0.5 value=${p}><button class=x title=remove>✕</button>`;
+  d.querySelector("button").onclick = () => { d.remove(); render(); }; d.querySelectorAll("input").forEach(i => i.oninput = render); $("rows").append(d); render(); }
+function preset(s, len, buf) { $("rows").innerHTML = ""; $("len").value = len; $("buf").value = buf; s.split(",").forEach(x => { const [n, p] = x.split(":"); addRow(n, +p); }); }
+function plan() {
+  const qs = [...$("rows").children].map(r => { const [a, b] = r.querySelectorAll("input"); return { name: a.value || "Question", pts: Math.max(0, +b.value || 0) }; });
+  const work = Math.max(1, (+$("len").value || 0) - (+$("buf").value || 0)) * 60, tot = qs.reduce((s, q) => s + q.pts, 0) || 1;
+  let acc = 0; qs.forEach(q => { q.sec = Math.floor(work * q.pts / tot); acc += q.sec; });
+  if (qs.length) qs[qs.length - 1].sec += work - acc; // rounding leftovers go to the last question
+  return { qs, buf: Math.max(0, (+$("buf").value || 0) * 60), tot };
+}
+const mm = s => { const a = Math.abs(Math.round(s)); return (s < 0 ? "−" : "") + Math.floor(a / 60) + ":" + String(a % 60).padStart(2, "0"); };
+function render() { const { qs, buf, tot } = plan(); let t = 0;
+  $("plan").innerHTML = "<tr><td><b>Question</b></td><td class=r><b>Points</b></td><td class=r><b>Time</b></td><td class=r><b>Finish by</b></td></tr>" +
+    qs.map(q => { t += q.sec; return `<tr><td>${q.name.replace(/</g, "&lt;")}</td><td class=r>${q.pts}</td><td class=r>${mm(q.sec)}</td><td class=r>${mm(t)}</td></tr>`; }).join("") +
+    `<tr><td>Check everything</td><td class=r>—</td><td class=r>${mm(buf)}</td><td class=r>${mm(t + buf)}</td></tr>`;
+  localStorage.setItem("ec", JSON.stringify({ len: $("len").value, buf: $("buf").value, q: qs.map(q => [q.name, q.pts]) })); }
+$("len").oninput = $("buf").oninput = render;
+
+let S = null, tick = null;
+function start() { const p = plan(); p.qs.push({ name: "Check everything", sec: p.buf, pts: 0 }); S = { ...p, i: 0, qStart: Date.now(), t0: Date.now(), paused: 0 };
+  $("setup").style.display = "none"; $("run").style.display = "block"; try { navigator.wakeLock?.request("screen"); } catch {} tick = setInterval(draw, 250); draw(); }
+function nextQ() { if (S.i < S.qs.length - 1) { S.i++; S.qStart = Date.now(); beep(660); draw(); } }
+function pause() { if (S.pausedAt) { const d = Date.now() - S.pausedAt; S.qStart += d; S.t0 += d; S.pausedAt = 0; $("pb").textContent = "Pause"; } else { S.pausedAt = Date.now(); $("pb").textContent = "Resume"; } }
+function stop() { clearInterval(tick); $("run").style.display = "none"; $("setup").style.display = "block"; }
+let warned = -1;
+function draw() { const now = S.pausedAt || Date.now(), q = S.qs[S.i], left = q.sec - (now - S.qStart) / 1000;
+  $("cur").textContent = `${S.i + 1}/${S.qs.length} · ${q.name}${q.pts ? ` · ${q.pts} pts` : ""}`;
+  $("big").textContent = mm(left); $("big").className = left < 0 ? "over" : left < 60 ? "warn" : "";
+  if (left < 0 && warned !== S.i) { warned = S.i; beep(440); navigator.vibrate?.(400); }
+  $("next").textContent = left < 0 ? "Time's up for this one — move on" : S.qs[S.i + 1] ? "Next: " + S.qs[S.i + 1].name : "Last part";
+  const all = S.qs.reduce((s, x) => s + x.sec, 0), el = (now - S.t0) / 1000;
+  $("total").textContent = `Exam time left: ${mm(all - el)}`;
+  $("bar").innerHTML = S.qs.map((x, j) => `<div style="flex:${x.sec || 1}" class="${j < S.i ? "done" : j === S.i ? "now" : ""}"></div>`).join(""); }
+function beep(f) { try { const a = new AudioContext(), o = a.createOscillator(), g = a.createGain(); o.frequency.value = f; o.connect(g); g.connect(a.destination); g.gain.value = .15; o.start(); o.stop(a.currentTime + .25); } catch {} }
+function share() { const { qs } = plan(); const h = "#" + encodeURIComponent(JSON.stringify({ len: $("len").value, buf: $("buf").value, q: qs.map(q => [q.name, q.pts]) }));
+  navigator.clipboard.writeText(location.href.split("#")[0] + h); history.replaceState(0, "", h); }
+(function init() { let d = null;
+  try { d = JSON.parse(decodeURIComponent(location.hash.slice(1))); } catch {}
+  if (!d) try { d = JSON.parse(localStorage.getItem("ec")); } catch {}
+  if (d && d.q) { $("len").value = d.len; $("buf").value = d.buf; d.q.forEach(([n, p]) => addRow(n, p)); }
+  else preset("Theory 1:6,Theory 2:6,Problem:7,4 tests:4,Definition:2", 80, 8); })();
+</script></html>
